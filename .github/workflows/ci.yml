@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, add-ci]  # TODO: Remove add-ci before merging
+    branches: [main]
     tags: ["v*"]
   pull_request:
     branches: [main]
