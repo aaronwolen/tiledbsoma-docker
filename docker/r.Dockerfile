@@ -11,7 +11,8 @@ FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TILEDBSOMA_REF=main
-ARG CRAN_REPO=https://packagemanager.posit.co/cran/__linux__/noble/latest
+ARG UBUNTU_CODENAME=noble
+ARG CRAN_REPO=https://packagemanager.posit.co/cran/__linux__/${UBUNTU_CODENAME}/latest
 
 # Install R and dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
