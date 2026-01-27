@@ -36,5 +36,3 @@ RUN R -q -e "library(tiledbsoma); cat('tiledbsoma R package loaded successfully\
 LABEL org.opencontainers.image.title="tiledbsoma-r"
 LABEL org.opencontainers.image.description="TileDB-SOMA R package image"
 LABEL org.opencontainers.image.source="https://github.com/single-cell-data/TileDB-SOMA"
-
-ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
