@@ -61,6 +61,7 @@ RUN git clone https://github.com/microsoft/vcpkg.git \
     && ./bootstrap-vcpkg.sh
 
 # Clone TileDB-SOMA
+# Note: --depth 1 works with branches/tags but not commit SHAs
 WORKDIR /build
 RUN git clone --depth 1 --branch ${TILEDBSOMA_REF} ${TILEDBSOMA_REPO} TileDB-SOMA
 
