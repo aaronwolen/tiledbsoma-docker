@@ -33,27 +33,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Determine the SOMA ref and image tag based on trigger
       - name: Set build parameters
         id: params
         run: |
+          # Determine image tag based on trigger
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "soma_ref=${{ inputs.tiledbsoma_ref }}" >> $GITHUB_OUTPUT
-            echo "image_tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
+            IMAGE_TAG="${{ inputs.image_tag }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "soma_ref=main" >> $GITHUB_OUTPUT
-            echo "image_tag=pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
+            IMAGE_TAG="pr-${{ github.event.number }}"
           else
-            # push to main or scheduled build
-            echo "soma_ref=main" >> $GITHUB_OUTPUT
-            echo "image_tag=latest" >> $GITHUB_OUTPUT
+            IMAGE_TAG="latest"
           fi
-          # For PRs, only build amd64; for pushes, build both architectures
+
+          # For stable builds, use the pinned release version; otherwise use input or main
+          if [[ "$IMAGE_TAG" == "stable" ]]; then
+            SOMA_REF="${{ env.STABLE_SOMA_REF }}"
+            CACHE_SUFFIX="-stable"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SOMA_REF="${{ inputs.tiledbsoma_ref }}"
+            CACHE_SUFFIX=""
+          else
+            SOMA_REF="main"
+            CACHE_SUFFIX=""
+          fi
+
+          # PR builds: single platform, local images only
+          # All other builds: multi-arch, push to registry
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+            PLATFORMS="linux/amd64"
+            PUSH="false"
           else
-            echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+            PLATFORMS="linux/amd64,linux/arm64"
+            PUSH="true"
           fi
+
+          {
+            echo "image_tag=$IMAGE_TAG"
+            echo "soma_ref=$SOMA_REF"
+            echo "cache_suffix=$CACHE_SUFFIX"
+            echo "platforms=$PLATFORMS"
+            echo "push=$PUSH"
+          } >> "$GITHUB_OUTPUT"
 
       # Required for ARM64 emulation (only needed for multi-arch push builds)
       - uses: docker/setup-qemu-action@v3
@@ -84,34 +104,20 @@ jobs:
             type=raw,value=${{ steps.params.outputs.image_tag }}
             type=sha,prefix=sha-
 
-      - name: Build and push base
-        if: github.event_name != 'pull_request'
+      - name: Build base
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/base.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
-          push: true
+          push: ${{ steps.params.outputs.push }}
+          load: ${{ github.event_name == 'pull_request' }}
           build-args: |
             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
-          tags: ${{ steps.meta-base.outputs.tags }}
+          tags: ${{ github.event_name == 'pull_request' && 'tiledbsoma-base:local' || steps.meta-base.outputs.tags }}
           labels: ${{ steps.meta-base.outputs.labels }}
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,mode=max,scope=base
-
-      # For PRs, build base locally (single platform) to validate
-      - name: Build base (PR validation)
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/base.Dockerfile
-          load: true
-          build-args: |
-            TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
-          tags: tiledbsoma-base:local
-          cache-from: type=gha,scope=base
-          cache-to: type=gha,mode=max,scope=base
+          cache-from: type=gha,scope=base${{ steps.params.outputs.cache_suffix }}
+          cache-to: type=gha,mode=max,scope=base${{ steps.params.outputs.cache_suffix }}
 
       # =========================================================================
       # R image
@@ -125,35 +131,21 @@ jobs:
             type=raw,value=${{ steps.params.outputs.image_tag }}
             type=sha,prefix=sha-
 
-      - name: Build and push R
-        if: github.event_name != 'pull_request'
+      - name: Build R
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/r.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
-          push: true
+          push: ${{ steps.params.outputs.push }}
+          load: ${{ github.event_name == 'pull_request' }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ steps.params.outputs.image_tag }}
+            BASE_IMAGE=${{ github.event_name == 'pull_request' && 'tiledbsoma-base:local' || format('{0}-base:{1}', env.IMAGE_PREFIX, steps.params.outputs.image_tag) }}
             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
-          tags: ${{ steps.meta-r.outputs.tags }}
+          tags: ${{ github.event_name == 'pull_request' && 'tiledbsoma-r:local' || steps.meta-r.outputs.tags }}
           labels: ${{ steps.meta-r.outputs.labels }}
-          cache-from: type=gha,scope=r
-          cache-to: type=gha,mode=max,scope=r
-
-      - name: Build R (PR validation)
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/r.Dockerfile
-          load: true
-          build-args: |
-            BASE_IMAGE=tiledbsoma-base:local
-            TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
-          tags: tiledbsoma-r:local
-          cache-from: type=gha,scope=r
-          cache-to: type=gha,mode=max,scope=r
+          cache-from: type=gha,scope=r${{ steps.params.outputs.cache_suffix }}
+          cache-to: type=gha,mode=max,scope=r${{ steps.params.outputs.cache_suffix }}
 
       # =========================================================================
       # Python image
@@ -167,131 +159,18 @@ jobs:
             type=raw,value=${{ steps.params.outputs.image_tag }}
             type=sha,prefix=sha-
 
-      - name: Build and push Python
-        if: github.event_name != 'pull_request'
+      - name: Build Python
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/python.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
-          push: true
+          push: ${{ steps.params.outputs.push }}
+          load: ${{ github.event_name == 'pull_request' }}
           build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ steps.params.outputs.image_tag }}
+            BASE_IMAGE=${{ github.event_name == 'pull_request' && 'tiledbsoma-base:local' || format('{0}-base:{1}', env.IMAGE_PREFIX, steps.params.outputs.image_tag) }}
             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
-          tags: ${{ steps.meta-python.outputs.tags }}
+          tags: ${{ github.event_name == 'pull_request' && 'tiledbsoma-python:local' || steps.meta-python.outputs.tags }}
           labels: ${{ steps.meta-python.outputs.labels }}
-          cache-from: type=gha,scope=python
-          cache-to: type=gha,mode=max,scope=python
-
-      - name: Build Python (PR validation)
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/python.Dockerfile
-          load: true
-          build-args: |
-            BASE_IMAGE=tiledbsoma-base:local
-            TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
-          tags: tiledbsoma-python:local
-          cache-from: type=gha,scope=python
-          cache-to: type=gha,mode=max,scope=python
-
-  # =========================================================================
-  # Stable builds - triggered only via workflow_dispatch with image_tag=stable
-  # =========================================================================
-  stable:
-    if: github.event_name == 'workflow_dispatch' && inputs.image_tag == 'stable'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
-
-      - uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Base image
-      - name: Docker meta (base)
-        id: meta-base
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_PREFIX }}-base
-          tags: |
-            type=raw,value=stable
-            type=sha,prefix=sha-
-
-      - name: Build and push base (stable)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/base.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            TILEDBSOMA_REF=${{ env.STABLE_SOMA_REF }}
-          tags: ${{ steps.meta-base.outputs.tags }}
-          labels: ${{ steps.meta-base.outputs.labels }}
-          cache-from: type=gha,scope=base-stable
-          cache-to: type=gha,mode=max,scope=base-stable
-
-      # R image
-      - name: Docker meta (r)
-        id: meta-r
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_PREFIX }}-r
-          tags: |
-            type=raw,value=stable
-            type=sha,prefix=sha-
-
-      - name: Build and push R (stable)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/r.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:stable
-            TILEDBSOMA_REF=${{ env.STABLE_SOMA_REF }}
-          tags: ${{ steps.meta-r.outputs.tags }}
-          labels: ${{ steps.meta-r.outputs.labels }}
-          cache-from: type=gha,scope=r-stable
-          cache-to: type=gha,mode=max,scope=r-stable
-
-      # Python image
-      - name: Docker meta (python)
-        id: meta-python
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_PREFIX }}-python
-          tags: |
-            type=raw,value=stable
-            type=sha,prefix=sha-
-
-      - name: Build and push Python (stable)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/python.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:stable
-            TILEDBSOMA_REF=${{ env.STABLE_SOMA_REF }}
-          tags: ${{ steps.meta-python.outputs.tags }}
-          labels: ${{ steps.meta-python.outputs.labels }}
-          cache-from: type=gha,scope=python-stable
-          cache-to: type=gha,mode=max,scope=python-stable
+          cache-from: type=gha,scope=python${{ steps.params.outputs.cache_suffix }}
+          cache-to: type=gha,mode=max,scope=python${{ steps.params.outputs.cache_suffix }}
