@@ -10,7 +10,7 @@ ARG BASE_IMAGE=tiledbsoma-base:dev
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TILEDBSOMA_REF=main
+ARG TILEDBSOMA_REF=2.0.0
 
 # Install Python and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,5 +39,3 @@ RUN python3 -c "import tiledbsoma; print(f'tiledbsoma {tiledbsoma.__version__} l
 LABEL org.opencontainers.image.title="tiledbsoma-python"
 LABEL org.opencontainers.image.description="TileDB-SOMA Python package image"
 LABEL org.opencontainers.image.source="https://github.com/single-cell-data/TileDB-SOMA"
-
-ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}

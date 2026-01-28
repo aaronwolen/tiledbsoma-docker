@@ -17,6 +17,7 @@
 # vcpkg dependencies (including TileDB core) are installed to /opt/vcpkg_installed.
 
 ARG UBUNTU_VERSION=24.04
+ARG TILEDBSOMA_REF=2.0.0
 
 # =============================================================================
 # Builder stage
@@ -25,7 +26,7 @@ FROM ubuntu:${UBUNTU_VERSION} AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TILEDBSOMA_REPO=https://github.com/single-cell-data/TileDB-SOMA.git
-ARG TILEDBSOMA_REF=main
+ARG TILEDBSOMA_REF
 
 ENV TZ=UTC
 ENV LANG=en_US.UTF-8
@@ -61,6 +62,7 @@ RUN git clone https://github.com/microsoft/vcpkg.git \
     && ./bootstrap-vcpkg.sh
 
 # Clone TileDB-SOMA
+# Note: --depth 1 works with branches/tags but not commit SHAs
 WORKDIR /build
 RUN git clone --depth 1 --branch ${TILEDBSOMA_REF} ${TILEDBSOMA_REPO} TileDB-SOMA
 

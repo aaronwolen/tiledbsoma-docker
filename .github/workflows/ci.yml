@@ -1,0 +1,177 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tiledbsoma_ref:
+        description: "TileDB-SOMA ref to build (overrides Dockerfile default)"
+        required: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/tiledbsoma
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set build parameters
+        id: params
+        run: |
+          # Read the default version from the Dockerfile to use as the tag
+          DEFAULT_VERSION=$(grep "ARG TILEDBSOMA_REF=" docker/base.Dockerfile | cut -d= -f2)
+          
+          # If a manual input is provided, use that for the build arg, otherwise use default
+          if [[ "${{ inputs.tiledbsoma_ref }}" != "" ]]; then
+             SOMA_REF="${{ inputs.tiledbsoma_ref }}"
+             # For manual builds, we might want to tag differently or just use the ref as the tag?
+             # But for simplicity per requirements, let's just stick to the plan:
+             # If manual ref is different, maybe just tag as 'manual-<ref>' or similar? 
+             # actually user request was: "update SOMA ref variable in a PR... then merge... then CI runs on main"
+             # So we probably don't primarily rely on inputs.tiledbsoma_ref for the release flow.
+             # The release flow relies on the file content.
+             VERSION_TAG="${{ inputs.tiledbsoma_ref }}"
+          else
+             SOMA_REF="$DEFAULT_VERSION"
+             VERSION_TAG="$DEFAULT_VERSION"
+          fi
+          
+          # Simplified Tagging:
+          # PR -> pr-<number>
+          # Main -> <version>, latest
+          
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TAGS="type=raw,value=pr-${{ github.event.number }}"
+            PUSH="false"
+            # PRs: single platform check
+            PLATFORMS="linux/amd64"
+          else
+             # On main: tag with version AND latest
+             # Use printf to generate newline-separated tags safely
+             TAGS=$(printf "type=raw,value=%s\ntype=raw,value=latest" "${VERSION_TAG}")
+             PUSH="true"
+             PLATFORMS="linux/amd64,linux/arm64"
+          fi
+
+          echo "soma_ref=$SOMA_REF" >> "$GITHUB_OUTPUT"
+          echo "push=$PUSH" >> "$GITHUB_OUTPUT"
+          echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
+          
+          # Multiline string for proper output
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver: ${{ github.event_name == 'pull_request' && 'docker' || 'docker-container' }}
+      
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # =========================================================================
+      # Base image
+      # =========================================================================
+      - name: Docker meta (base)
+        id: meta-base
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}-base
+          tags: ${{ steps.params.outputs.tags }}
+
+      - name: Build base
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/base.Dockerfile
+          platforms: ${{ steps.params.outputs.platforms }}
+          push: ${{ steps.params.outputs.push == 'true' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          build-args: |
+             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
+          tags: ${{ steps.meta-base.outputs.tags }}
+          labels: ${{ steps.meta-base.outputs.labels }}
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+
+      # =========================================================================
+      # R image
+      # =========================================================================
+      - name: Docker meta (r)
+        id: meta-r
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}-r
+          tags: ${{ steps.params.outputs.tags }}
+
+      - name: Build R
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/r.Dockerfile
+          platforms: ${{ steps.params.outputs.platforms }}
+          push: ${{ steps.params.outputs.push == 'true' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'latest' }} 
+            TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
+          # Note: BASE_IMAGE above is tricky. 
+          # In a single workflow run, if we push base, we can pull it for R. 
+          # But if we don't push (PR), we can't easily share images between steps with docker-container driver (needed for multi-arch).
+          # For PRs (multi-arch, no push), the downstream builds might check out the same context 
+          # BUT they depend on the base image being available.
+          # Building multi-arch locally and not pushing means the base image is in the build cache but not in a registry.
+          # The 'docker' driver shares state but is single arch usually. 'docker-container' is isolated.
+          # A common pattern is to rely on 'latest' from registry for PRs (which might be old) OR build everything in one go (bake).
+          # OR just build for one arch in PRs so we can load it.
+          # Let's verify the user's "multi-arch on PR" requirement vs practical limitations.
+          # "run the tests in CI (without publishing)"
+          # To keep it robust for this stage, let's switch PRs to single arch (amd64) so we can 'load' the base image?
+          # Actually, the user specifically mentioned "across both linux arm64 and x86-64 archs" for the REGISTRY.
+          # For PR checks, checking one arch is usually enough for "validation".
+          # Let's simplify PR to linux/amd64 so we can chain the builds easily without pushing.
+          tags: ${{ steps.meta-r.outputs.tags }}
+          labels: ${{ steps.meta-r.outputs.labels }}
+          cache-from: type=gha,scope=r
+          cache-to: type=gha,mode=max,scope=r
+
+      # =========================================================================
+      # Python image
+      # =========================================================================
+      - name: Docker meta (python)
+        id: meta-python
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}-python
+          tags: ${{ steps.params.outputs.tags }}
+
+      - name: Build Python
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/python.Dockerfile
+          platforms: ${{ steps.params.outputs.platforms }}
+          push: ${{ steps.params.outputs.push == 'true' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'latest' }}
+            TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
+          tags: ${{ steps.meta-python.outputs.tags }}
+          labels: ${{ steps.meta-python.outputs.labels }}
+          cache-from: type=gha,scope=python
+          cache-to: type=gha,mode=max,scope=python
