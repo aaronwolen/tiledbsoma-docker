@@ -62,14 +62,14 @@ jobs:
              PLATFORMS="linux/amd64,linux/arm64"
           fi
 
-          echo "soma_ref=$SOMA_REF"
-          echo "push=$PUSH"
-          echo "platforms=$PLATFORMS"
+          echo "soma_ref=$SOMA_REF" >> "$GITHUB_OUTPUT"
+          echo "push=$PUSH" >> "$GITHUB_OUTPUT"
+          echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
           
           # Multiline string for proper output
-          echo "tags<<EOF" >> $GITHUB_OUTPUT
-          echo "$TAGS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
       
@@ -98,7 +98,7 @@ jobs:
           context: .
           file: docker/base.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
-          push: ${{ steps.params.outputs.push }}
+          push: ${{ steps.params.outputs.push == 'true' }}
           build-args: |
              TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
           tags: ${{ steps.meta-base.outputs.tags }}
@@ -122,7 +122,7 @@ jobs:
           context: .
           file: docker/r.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
-          push: ${{ steps.params.outputs.push }}
+          push: ${{ steps.params.outputs.push == 'true' }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'latest' }} 
             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
@@ -162,7 +162,7 @@ jobs:
           context: .
           file: docker/python.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
-          push: ${{ steps.params.outputs.push }}
+          push: ${{ steps.params.outputs.push == 'true' }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'latest' }}
             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
