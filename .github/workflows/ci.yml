@@ -74,6 +74,8 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: ${{ github.event_name == 'pull_request' && 'docker' || 'docker-container' }}
       
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
@@ -99,6 +101,7 @@ jobs:
           file: docker/base.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
           push: ${{ steps.params.outputs.push == 'true' }}
+          load: ${{ github.event_name == 'pull_request' }}
           build-args: |
              TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
           tags: ${{ steps.meta-base.outputs.tags }}
@@ -123,6 +126,7 @@ jobs:
           file: docker/r.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
           push: ${{ steps.params.outputs.push == 'true' }}
+          load: ${{ github.event_name == 'pull_request' }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'latest' }} 
             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
@@ -163,6 +167,7 @@ jobs:
           file: docker/python.Dockerfile
           platforms: ${{ steps.params.outputs.platforms }}
           push: ${{ steps.params.outputs.push == 'true' }}
+          load: ${{ github.event_name == 'pull_request' }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}-base:${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'latest' }}
             TILEDBSOMA_REF=${{ steps.params.outputs.soma_ref }}
