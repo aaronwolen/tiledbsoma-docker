@@ -10,7 +10,7 @@ ARG BASE_IMAGE=tiledbsoma-base:dev
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TILEDBSOMA_REF=main
+ARG TILEDBSOMA_REF=2.0.0
 ARG UBUNTU_CODENAME=noble
 ARG CRAN_REPO=https://packagemanager.posit.co/cran/__linux__/${UBUNTU_CODENAME}/latest
 
