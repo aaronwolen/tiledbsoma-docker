@@ -5,7 +5,7 @@ Docker images for TileDB-SOMA's R and Python packages.
 ## Images
 
 | Image                                  | Description                             |
-|----------------------------------------------------------------------------------|
+|----------------------------------------|-----------------------------------------|
 | `ghcr.io/aaronwolen/tiledbsoma-base`   | TileDB core + libtiledbsoma C++ library |
 | `ghcr.io/aaronwolen/tiledbsoma-r`      | Base + TileDB-SOMA R package            |
 | `ghcr.io/aaronwolen/tiledbsoma-python` | Base + TileDB-SOMA Python package       |
