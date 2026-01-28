@@ -57,10 +57,15 @@ jobs:
             echo "push=true" >> $GITHUB_OUTPUT
           fi
 
-      # Required for ARM64 emulation
+      # Required for ARM64 emulation (only needed for multi-arch push builds)
       - uses: docker/setup-qemu-action@v3
+        if: github.event_name != 'pull_request'
 
+      # Use docker driver for PRs (allows local image sharing between builds)
+      # Use docker-container driver for push builds (required for multi-arch)
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: ${{ github.event_name == 'pull_request' && 'docker' || 'docker-container' }}
 
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
