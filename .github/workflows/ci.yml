@@ -52,20 +52,12 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             TAGS="type=raw,value=pr-${{ github.event.number }}"
             PUSH="false"
-            # PRs: single platform for speed, or user wants to just validate?
-            # User said: "run the tests in CI (without publishing) and then merge if they pass"
-            # User also said: "just contain image files tagged for each soma release, across both linux arm64 and x86-64 archs"
-            # To validate multi-arch build works, we should probably build multi-arch in PR too? 
-            # But standard 'docker' driver doesn't support multi-arch well without pushing/loading issues.
-            # Usually for PRs we just check one arch to save time, unless arch-specific issues are expected.
-            # Let's stick to linux/amd64 for PR validation to keep it fast, unless requested otherwise.
-            # Wait, implementation plan said: "CI validates the build (multi-arch) on the PR without publishing."
-            # To build multi-arch without pushing, we just build.
-            PLATFORMS="linux/amd64,linux/arm64"
+            # PRs: single platform check
+            PLATFORMS="linux/amd64"
           else
              # On main: tag with version AND latest
-             TAGS="type=raw,value=${VERSION_TAG}
-type=raw,value=latest"
+             # Use printf to generate newline-separated tags safely
+             TAGS=$(printf "type=raw,value=%s\ntype=raw,value=latest" "${VERSION_TAG}")
              PUSH="true"
              PLATFORMS="linux/amd64,linux/arm64"
           fi
