@@ -117,7 +117,7 @@ jobs:
           tags: ${{ github.event_name == 'pull_request' && 'tiledbsoma-base:local' || steps.meta-base.outputs.tags }}
           labels: ${{ steps.meta-base.outputs.labels }}
           cache-from: type=gha,scope=base${{ steps.params.outputs.cache_suffix }}
-          cache-to: type=gha,mode=max,scope=base${{ steps.params.outputs.cache_suffix }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope=base{0}', steps.params.outputs.cache_suffix) || '' }}
 
       # =========================================================================
       # R image
@@ -145,7 +145,7 @@ jobs:
           tags: ${{ github.event_name == 'pull_request' && 'tiledbsoma-r:local' || steps.meta-r.outputs.tags }}
           labels: ${{ steps.meta-r.outputs.labels }}
           cache-from: type=gha,scope=r${{ steps.params.outputs.cache_suffix }}
-          cache-to: type=gha,mode=max,scope=r${{ steps.params.outputs.cache_suffix }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope=r{0}', steps.params.outputs.cache_suffix) || '' }}
 
       # =========================================================================
       # Python image
@@ -173,4 +173,4 @@ jobs:
           tags: ${{ github.event_name == 'pull_request' && 'tiledbsoma-python:local' || steps.meta-python.outputs.tags }}
           labels: ${{ steps.meta-python.outputs.labels }}
           cache-from: type=gha,scope=python${{ steps.params.outputs.cache_suffix }}
-          cache-to: type=gha,mode=max,scope=python${{ steps.params.outputs.cache_suffix }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope=python{0}', steps.params.outputs.cache_suffix) || '' }}
